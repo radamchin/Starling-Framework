@@ -4,7 +4,6 @@ package
     import flash.display.StageAlign;
     import flash.display.StageScaleMode;
     import flash.events.Event;
-    import flash.system.Capabilities;
     
     import starling.core.Starling;
     
@@ -23,7 +22,7 @@ package
             
             mStarling = new Starling(Game, stage);
             mStarling.simulateMultitouch = true;
-            mStarling.enableErrorChecking = Capabilities.isDebugger;
+            mStarling.enableErrorChecking = false;
             mStarling.start();
             
             // this event is dispatched when stage3D is set up
