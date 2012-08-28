@@ -99,6 +99,29 @@ package starling.display
             onVertexDataChanged();
         }
         
+		
+		/* Adamh added */
+		
+		public function setQuads(tl_x:Number, tl_y:Number, tr_x:Number, tr_y:Number, br_x:Number, br_y:Number, bl_x:Number, bl_y:Number):void {
+			
+		    mVertexData.setPosition(0, tl_x, tl_y);
+            mVertexData.setPosition(1, tr_x, tr_y);
+            mVertexData.setPosition(2, bl_x, bl_y);
+            mVertexData.setPosition(3, br_x, br_y);
+
+			onVertexDataChanged();
+		}
+		
+		public function offsetQuads(tl_x:Number, tl_y:Number, tr_x:Number, tr_y:Number, br_x:Number, br_y:Number, bl_x:Number, bl_y:Number):void {
+			
+		    mVertexData.setPosition(0, tl_x, tl_y);
+            mVertexData.setPosition(1, width+tr_x, tr_y);
+            mVertexData.setPosition(2, bl_x, height+bl_y);
+            mVertexData.setPosition(3, width+br_x, height+br_y);
+
+			onVertexDataChanged();
+		}
+
         /** Sets the texture coordinates of a vertex. Coordinates are in the range [0, 1]. */
         public function setTexCoords(vertexID:int, coords:Point):void
         {

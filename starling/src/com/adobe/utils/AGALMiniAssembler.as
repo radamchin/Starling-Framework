@@ -79,7 +79,7 @@ package com.adobe.utils
 		// ======================================================================
 		//	Methods
 		// ----------------------------------------------------------------------
-		public function assemble( mode:String, source:String ):ByteArray
+		public function assemble( mode:String, source:String, debug:Boolean = false ):ByteArray
 		{
 			var start:uint = getTimer();
 			
