@@ -52,16 +52,18 @@ package starling.core
         
         private function updateText(fps:Number, memory:Number, drawCount:int):void
         {
+	
             mTextField.text = "FPS: " + fps.toFixed(fps < 100 ? 1 : 0) + 
-                            "\nMEM: " + memory.toFixed(memory < 100 ? 1 : 0) +
+                            "\nMEM: " + memory.toFixed(memory < 100 ? 1 : 0) + 
                             "\nDRW: " + drawCount; 
         }
         
+
         private function getMemory():Number
         {
-            return System.totalMemory * 0.000000954; // 1 / (1024*1024) to convert to MB
+            return System.privateMemory * 0.000000954; // 1 / (1024*1024) to convert to MB // was totalMemory
         }
-        
+
         private function onEnterFrame(event:EnterFrameEvent):void
         {
             mTotalTime += event.passedTime;

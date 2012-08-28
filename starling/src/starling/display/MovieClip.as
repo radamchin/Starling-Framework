@@ -45,7 +45,6 @@ package starling.display
     {
         private var mTextures:Vector.<Texture>;
         private var mSounds:Vector.<Sound>;
-		private var mActions:Vector.<Object>;
         private var mDurations:Vector.<Number>;
         private var mStartTimes:Vector.<Number>;
         
@@ -63,26 +62,34 @@ package starling.display
             if (textures.length > 0)
             {
                 super(textures[0]);
-                if (fps <= 0) throw new ArgumentError("Invalid fps: " + fps);
-                
-                mDefaultFrameDuration = 1.0 / fps;
-                mLoop = true;
-                mPlaying = true;
-                mTotalTime = 0.0;
-                mCurrentTime = 0.0;
-                mCurrentFrame = 0;
-                mTextures = new <Texture>[];
-                mSounds = new <Sound>[];
-				mActions = new <Object>[];
-                mDurations = new <Number>[];
-                mStartTimes = new <Number>[];
-                
-                for each (var texture:Texture in textures)
-                    addFrame(texture);
+                init(textures, fps);
             }
             else
             {
                 throw new ArgumentError("Empty texture array");
+            }
+        }
+        
+        private function init(textures:Vector.<Texture>, fps:Number):void
+        {
+            if (fps <= 0) throw new ArgumentError("Invalid fps: " + fps);
+            var numFrames:int = textures.length;
+            
+            mDefaultFrameDuration = 1.0 / fps;
+            mLoop = true;
+            mPlaying = true;
+            mCurrentTime = 0.0;
+            mCurrentFrame = 0;
+            mTotalTime = mDefaultFrameDuration * numFrames;
+            mTextures = textures.concat();
+            mSounds = new Vector.<Sound>(numFrames);
+            mDurations = new Vector.<Number>(numFrames);
+            mStartTimes = new Vector.<Number>(numFrames);
+            
+            for (var i:int=0; i<numFrames; ++i)
+            {
+                mDurations[i] = mDefaultFrameDuration;
+                mStartTimes[i] = i * mDefaultFrameDuration;
             }
         }
         
@@ -97,15 +104,13 @@ package starling.display
         
         /** Adds a frame at a certain index, optionally with a sound and a custom duration. */
         public function addFrameAt(frameID:int, texture:Texture, sound:Sound=null, 
-                                   duration:Number=-1, 
-								   action:Function = null, args:Array = null):void
+                                   duration:Number=-1):void
         {
             if (frameID < 0 || frameID > numFrames) throw new ArgumentError("Invalid frame id");
             if (duration < 0) duration = mDefaultFrameDuration;
             
             mTextures.splice(frameID, 0, texture);
             mSounds.splice(frameID, 0, sound);
-			mActions.splice(frameID, 0, (action == null) ? null : {func:action, args:args});			
             mDurations.splice(frameID, 0, duration);
             mTotalTime += duration;
             
@@ -124,7 +129,6 @@ package starling.display
             mTotalTime -= getFrameDuration(frameID);
             mTextures.splice(frameID, 1);
             mSounds.splice(frameID, 1);
-            mActions.splice(frameID, 1);
             mDurations.splice(frameID, 1);
             
             updateStartTimes();
@@ -159,21 +163,6 @@ package starling.display
             mSounds[frameID] = sound;
         }
         
-		/** Returns the action of a certain frame. */
-        public function getFrameAction(frameID:int):Object
-        {
-            if (frameID < 0 || frameID >= numFrames) throw new ArgumentError("Invalid frame id");
-            return mActions[frameID];
-        }
-        
-        /** Sets the action of a certain frame. The action will be executed whenever the frame 
-         *  is displayed. */
-        public function setFrameAction(frameID:int, action:Function, args:Array = null):void
-        {
-            if (frameID < 0 || frameID >= numFrames) throw new ArgumentError("Invalid frame id");
-            mActions[frameID] = {func:action, args:args};
-        }
-
         /** Returns the duration of a certain frame (in seconds). */
         public function getFrameDuration(frameID:int):Number
         {
@@ -271,9 +260,6 @@ package starling.display
                     
                     var sound:Sound = mSounds[mCurrentFrame];
                     if (sound) sound.play();
-
-					if (mActions[mCurrentFrame]) mActions[mCurrentFrame].func.apply(null, mActions[mCurrentFrame].args);
-
                 }
             }
             
@@ -311,7 +297,6 @@ package starling.display
             
             texture = mTextures[mCurrentFrame];
             if (mSounds[mCurrentFrame]) mSounds[mCurrentFrame].play();
-			if (mActions[mCurrentFrame]) mActions[mCurrentFrame].func.apply(null, mActions[mCurrentFrame].args);
         }
         
         /** The default number of frames per second. Individual frames can have different 
