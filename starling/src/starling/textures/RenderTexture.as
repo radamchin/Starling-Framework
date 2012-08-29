@@ -69,6 +69,9 @@ package starling.textures
         private var mNativeHeight:int;
         private var mSupport:RenderSupport;
         
+        /** helper object */
+        private static var sScissorRect:Rectangle = new Rectangle();
+        
         /** Creates a new RenderTexture with a certain size. If the texture is persistent, the
          *  contents of the texture remains intact after each draw call, allowing you to use the
          *  texture just like a canvas. If it is not, it will be cleared before each draw call.
@@ -107,13 +110,15 @@ package starling.textures
             super.dispose();
         }
         
-        /** Draws an object onto the texture, adhering its properties for position, scale, rotation 
-         *  and alpha.  
+        /** Draws an object into the texture.
          * 
-         *  @param matrix       Pass a matrix to apply additional transformations to the object.
+         *  @param object       The object to draw.
+         *  @param matrix       If 'matrix' is null, the object will be drawn adhering its 
+         *                      properties for position, scale, and rotation. If it is not null,
+         *                      the object will be drawn in the orientation depicted by the matrix.
          *  @param alpha        The object's alpha value will be multiplied with this value.
          *  @param antiAliasing This parameter is currently ignored by Stage3D.
-         * */
+         */
         public function draw(object:DisplayObject, matrix:Matrix=null, alpha:Number=1.0, 
                              antiAliasing:int=0):void
         {
@@ -126,17 +131,13 @@ package starling.textures
             
             function render():void
             {
-                mSupport.pushMatrix();
-                mSupport.pushBlendMode();
+                mSupport.loadIdentity();
                 mSupport.blendMode = object.blendMode;
                 
                 if (matrix) mSupport.prependMatrix(matrix);
-                mSupport.transformMatrix(object);
+                else        mSupport.transformMatrix(object);
                 
                 object.render(mSupport, alpha);
-                
-                mSupport.popMatrix();
-                mSupport.popBlendMode();
             }
         }
         
@@ -149,8 +150,8 @@ package starling.textures
             if (context == null) throw new MissingContextError();
             
             // limit drawing to relevant area
-            context.setScissorRectangle(
-                new Rectangle(0, 0, mActiveTexture.width * scale, mActiveTexture.height * scale));
+            sScissorRect.setTo(0, 0, mActiveTexture.width * scale, mActiveTexture.height * scale);
+            context.setScissorRectangle(sScissorRect)
             
             // persistent drawing uses double buffering, as Molehill forces us to call 'clear'
             // on every render target once per update.
