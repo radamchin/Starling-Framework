@@ -18,6 +18,7 @@ package starling.filters
     import flash.display3D.IndexBuffer3D;
     import flash.display3D.Program3D;
     import flash.display3D.VertexBuffer3D;
+    import flash.errors.IllegalOperationError;
     import flash.geom.Matrix;
     import flash.geom.Rectangle;
     import flash.system.Capabilities;
@@ -30,7 +31,6 @@ package starling.filters
     import starling.display.Stage;
     import starling.errors.AbstractClassError;
     import starling.errors.MissingContextError;
-    import starling.textures.RenderTexture;
     import starling.textures.Texture;
     import starling.utils.VertexData;
     import starling.utils.getNextPowerOfTwo;
@@ -70,8 +70,8 @@ package starling.filters
         private var mIndexBuffer:IndexBuffer3D;
         
         /** helper objects. */
-        private static var sBounds:Rectangle = new Rectangle();
-        private static var sMatrix:Matrix = new Matrix();
+        private var mBounds:Rectangle  = new Rectangle();
+        private var mProjMatrix:Matrix = new Matrix();
         
         public function FragmentFilter(numPasses:int=1, resolution:Number=1.0)
         {
@@ -101,6 +101,8 @@ package starling.filters
             createPrograms();
             
             // TODO: handle device loss
+            // TODO: check blend modes
+            // TODO: intersect object bounds with stage bounds & set scissor rectangle accordingly
         }
         
         public function dispose():void
@@ -120,60 +122,76 @@ package starling.filters
             if (mode == FragmentFilterMode.ABOVE)
                 object.render(support, parentAlpha);
             
+            // save original projection matrix and render target
+            mProjMatrix.copyFrom(support.projectionMatrix); 
+            var previousRenderTarget:Texture = support.renderTarget;
+            
+            if (previousRenderTarget)
+                throw new IllegalOperationError(
+                    "It's currently not possible to stack filters! " +
+                    "This limitation will be removed in a future Stage3D version.");
+            
             // get bounds in stage coordinates
             // can be expensive, so we optimize at least for full-screen effects
             if (object == stage || object == Starling.current.root)
-                sBounds.setTo(0, 0, stage.stageWidth, stage.stageHeight);
+                mBounds.setTo(0, 0, stage.stageWidth, stage.stageHeight);
             else
-                object.getBounds(stage, sBounds);
+                object.getBounds(stage, mBounds);
             
             var deltaMargin:Number = mResolution == 1.0 ? 0.0 : 1.0 / mResolution; // to avoid hard edges
-            sBounds.x -= mMarginLeft + deltaMargin;
-            sBounds.y -= mMarginTop  + deltaMargin;
-            sBounds.width  += mMarginLeft + mMarginRight  + 2*deltaMargin;
-            sBounds.height += mMarginTop  + mMarginBottom + 2*deltaMargin;
+            mBounds.x -= mMarginLeft + deltaMargin;
+            mBounds.y -= mMarginTop  + deltaMargin;
+            mBounds.width  += mMarginLeft + mMarginRight  + 2*deltaMargin;
+            mBounds.height += mMarginTop  + mMarginBottom + 2*deltaMargin;
             
-            sBounds.width  = getNextPowerOfTwo(sBounds.width  * mResolution);
-            sBounds.height = getNextPowerOfTwo(sBounds.height * mResolution);
+            mBounds.width  = getNextPowerOfTwo(mBounds.width  * mResolution);
+            mBounds.height = getNextPowerOfTwo(mBounds.height * mResolution);
             
-            // TODO: intersect with stage bounds & set scissor rectangle accordingly
-            updatePassTextures(sBounds.width, sBounds.height);
+            updatePassTextures(mBounds.width, mBounds.height);
             
             // update the vertices that span up the filter rectangle 
-            updateBuffers(context, sBounds.width, sBounds.height);
-            
-            // draw the original object into a render texture
-            renderBaseTexture(object, parentAlpha, sBounds.x, sBounds.y);
+            updateBuffers(context, mBounds.width, mBounds.height);
             
             // now prepare filter passes
             support.finishQuadBatch();
-            support.raiseDrawCount(mNumPasses+1);
-            RenderSupport.setBlendFactors(PMA); // TODO: check blend modes
+            support.raiseDrawCount(mNumPasses);
             
             support.pushMatrix();
-            sMatrix.copyFrom(support.projectionMatrix); // save original projection matrix
-            
             support.loadIdentity();
-            support.setOrthographicProjection(sBounds.width, sBounds.height);
+            support.setOrthographicProjection(mBounds.width, mBounds.height);
+            
+            // draw the original object into a render texture
+            var matrix:Matrix = support.modelViewMatrix; 
+            object.getTransformationMatrix(stage, matrix);
+            matrix.translate(-mBounds.x, -mBounds.y);
+            matrix.scale(mResolution, mResolution);
+            
+            support.renderTarget = mPassTextures[0];
+            support.clear();
+            
+            object.render(support, parentAlpha);
+            
+            support.finishQuadBatch();
+            support.loadIdentity();
             
             // set shader attributes
             context.setVertexBufferAt(0, mVertexBuffer, VertexData.POSITION_OFFSET, Context3DVertexBufferFormat.FLOAT_2);
             context.setVertexBufferAt(1, mVertexBuffer, VertexData.TEXCOORD_OFFSET, Context3DVertexBufferFormat.FLOAT_2);
             
+            // draw all passes
             for (var i:int=0; i<mNumPasses; ++i)
             {
                 if (i < mNumPasses - 1) // intermediate pass - draw into texture  
                 {
-                    context.setRenderToTexture(getPassTexture(i+1).base);
-                    RenderSupport.clear();
+                    support.renderTarget = getPassTexture(i+1);
+                    support.clear();
                 }
                 else // final pass -- draw into back buffer, at original position
                 {
-                    context.setRenderToBackBuffer();
-                    support.projectionMatrix.copyFrom(sMatrix); // restore projection matrix
-                    support.translateMatrix(sBounds.x + mOffsetX, sBounds.y + mOffsetY);
+                    support.renderTarget = previousRenderTarget;
+                    support.projectionMatrix.copyFrom(mProjMatrix); // restore projection matrix
+                    support.translateMatrix(mBounds.x + mOffsetX, mBounds.y + mOffsetY);
                     support.scaleMatrix(1.0/mResolution, 1.0/mResolution);
-                    
                     support.applyBlendMode(false);
                 }
                 
@@ -199,18 +217,6 @@ package starling.filters
         }
         
         // helper methods
-        
-        private function renderBaseTexture(object:DisplayObject, parentAlpha:Number, 
-                                           offsetX:Number, offsetY:Number):void
-        {
-            // move object to top left
-            object.getTransformationMatrix(object.stage, sMatrix);
-            sMatrix.translate(-offsetX, -offsetY);
-            sMatrix.scale(mResolution, mResolution);
-            
-            var basePassTexture:RenderTexture = mPassTextures[0] as RenderTexture;
-            basePassTexture.draw(object, sMatrix, parentAlpha);
-        }
         
         private function updateBuffers(context:Context3D, width:Number, height:Number):void
         {
@@ -248,11 +254,8 @@ package starling.filters
                     mPassTextures = new Vector.<Texture>(numPassTextures);
                 }
                 
-                var scale:Number = Starling.contentScaleFactor; 
-                mPassTextures[0] = new RenderTexture(width, height, false, scale);
-                
-                for (var i:int=1; i<numPassTextures; ++i)
-                    mPassTextures[i] = Texture.empty(width, height, PMA, true, scale);
+                for (var i:int=0; i<numPassTextures; ++i)
+                    mPassTextures[i] = Texture.empty(width, height, PMA, true);
             }
         }
         

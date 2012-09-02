@@ -67,7 +67,7 @@ package
                 ["Custom hit-test", CustomHitTestScene],
                 ["Movie Clip", MovieScene],
                 ["Benchmark", BenchmarkScene],
-                ["Render Texture", RenderTextureScene]
+                ["Render Texture", RenderTextureScene],
             ];
             
             var buttonTexture:Texture = Assets.getTexture("ButtonBig");
