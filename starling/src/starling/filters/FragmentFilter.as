@@ -27,10 +27,10 @@ package starling.filters
     import starling.core.RenderSupport;
     import starling.core.Starling;
     import starling.display.DisplayObject;
-    import starling.display.Image;
     import starling.display.Stage;
     import starling.errors.AbstractClassError;
     import starling.errors.MissingContextError;
+    import starling.events.Event;
     import starling.textures.Texture;
     import starling.utils.VertexData;
     import starling.utils.getNextPowerOfTwo;
@@ -52,15 +52,11 @@ package starling.filters
         
         private var mNumPasses:int;
         private var mPassTextures:Vector.<Texture>;
+
         private var mMode:String;
         private var mResolution:Number;
-        
-        private var mMarginTop:Number;
-        private var mMarginBottom:Number;
-        private var mMarginLeft:Number;
-        private var mMarginRight:Number;
-        
-        private var mBaseImage:Image;
+        private var mMarginX:Number;
+        private var mMarginY:Number;
         private var mOffsetX:Number;
         private var mOffsetY:Number;
         
@@ -84,10 +80,10 @@ package starling.filters
             if (numPasses < 1) throw new ArgumentError("At least one pass is required.");
             
             mNumPasses = numPasses;
-            mMarginTop = mMarginBottom = mMarginLeft = mMarginRight = 0.0;
-            mMode = FragmentFilterMode.REPLACE;
+            mMarginX = mMarginY = 0.0;
             mOffsetX = mOffsetY = 0;
             mResolution = resolution;
+            mMode = FragmentFilterMode.REPLACE;
             
             mVertexData = new VertexData(4);
             mVertexData.setTexCoords(0, 0, 0);
@@ -100,18 +96,48 @@ package starling.filters
             
             createPrograms();
             
-            // TODO: handle device loss
+            // Handle lost context. By using the conventional event, we can make it weak; this  
+            // avoids memory leaks when people forget to call "dispose" on the filter.
+            Starling.current.stage3D.addEventListener(Event.CONTEXT3D_CREATE, 
+                onContextCreated, false, 0, true);
+            
             // TODO: check blend modes
             // TODO: intersect object bounds with stage bounds & set scissor rectangle accordingly
         }
         
         public function dispose():void
         {
+            if (mVertexBuffer) mVertexBuffer.dispose();
+            if (mIndexBuffer)  mIndexBuffer.dispose();
+            
             for each (var texture:Texture in mPassTextures)
                 texture.dispose();
         }
         
+        private function onContextCreated(event:Object):void
+        {
+            mVertexBuffer = null;
+            mIndexBuffer  = null;
+            mPassTextures = null;
+            
+            createPrograms();
+        }
+        
         public function render(object:DisplayObject, support:RenderSupport, parentAlpha:Number):void
+        {
+            if (mode == FragmentFilterMode.ABOVE)
+                object.render(support, parentAlpha);
+            
+            renderPasses(object, support, parentAlpha);
+            
+            if (mode == FragmentFilterMode.BELOW)
+                object.render(support, parentAlpha);
+        }
+        
+        // helper methods
+        
+        private function renderPasses(object:DisplayObject, support:RenderSupport, 
+                                      parentAlpha:Number):void
         {
             var stage:Stage = object.stage;
             if (stage == null) return;
@@ -119,8 +145,9 @@ package starling.filters
             var context:Context3D = Starling.context;
             if (context == null) throw new MissingContextError();
             
-            if (mode == FragmentFilterMode.ABOVE)
-                object.render(support, parentAlpha);
+            support.finishQuadBatch();
+            support.raiseDrawCount(mNumPasses);
+            support.pushMatrix();
             
             // save original projection matrix and render target
             mProjMatrix.copyFrom(support.projectionMatrix); 
@@ -132,56 +159,49 @@ package starling.filters
                     "This limitation will be removed in a future Stage3D version.");
             
             // get bounds in stage coordinates
-            // can be expensive, so we optimize at least for full-screen effects
+            // optimize for full-screen effects
             if (object == stage || object == Starling.current.root)
                 mBounds.setTo(0, 0, stage.stageWidth, stage.stageHeight);
             else
                 object.getBounds(stage, mBounds);
             
+            // the bounds are a rectangle around the object, in stage coordinates,
+            // and with an optional margin. To fit into a POT-texture, it will grow towards
+            // the right and bottom.
             var deltaMargin:Number = mResolution == 1.0 ? 0.0 : 1.0 / mResolution; // to avoid hard edges
-            mBounds.x -= mMarginLeft + deltaMargin;
-            mBounds.y -= mMarginTop  + deltaMargin;
-            mBounds.width  += mMarginLeft + mMarginRight  + 2*deltaMargin;
-            mBounds.height += mMarginTop  + mMarginBottom + 2*deltaMargin;
+            mBounds.x -= mMarginX + deltaMargin;
+            mBounds.y -= mMarginY + deltaMargin;
+            mBounds.width  += 2 * (mMarginX + deltaMargin);
+            mBounds.height += 2 * (mMarginY + deltaMargin);
             
-            mBounds.width  = getNextPowerOfTwo(mBounds.width  * mResolution);
-            mBounds.height = getNextPowerOfTwo(mBounds.height * mResolution);
+            var textureWidth:int  = getNextPowerOfTwo(mBounds.width  * mResolution);
+            var textureHeight:int = getNextPowerOfTwo(mBounds.height * mResolution);
             
-            updatePassTextures(mBounds.width, mBounds.height);
+            mBounds.width  = textureWidth  / mResolution;
+            mBounds.height = textureHeight / mResolution;
             
-            // update the vertices that span up the filter rectangle 
-            updateBuffers(context, mBounds.width, mBounds.height);
+            // prepare the textures we will render into, and the quad that spans up the filter 
+            updatePassTextures(textureWidth, textureHeight);
+            updateBuffers(context, mBounds);
             
-            // now prepare filter passes
-            support.finishQuadBatch();
-            support.raiseDrawCount(mNumPasses);
-            
-            support.pushMatrix();
-            support.loadIdentity();
-            support.setOrthographicProjection(mBounds.width, mBounds.height);
-            
-            // draw the original object into a render texture
-            var matrix:Matrix = support.modelViewMatrix; 
-            object.getTransformationMatrix(stage, matrix);
-            matrix.translate(-mBounds.x, -mBounds.y);
-            matrix.scale(mResolution, mResolution);
-            
+            // draw the original object into a texture
             support.renderTarget = mPassTextures[0];
             support.clear();
-            
+            support.setOrthographicProjection(mBounds.x, mBounds.y, mBounds.width, mBounds.height);
             object.render(support, parentAlpha);
-            
             support.finishQuadBatch();
-            support.loadIdentity();
             
-            // set shader attributes
+            // prepare drawing of actual filter passes
+            RenderSupport.setBlendFactors(PMA); // force blend mode "normal" for filter passes
+            support.loadIdentity();             // now we'll draw in stage coordinates!
+            
             context.setVertexBufferAt(0, mVertexBuffer, VertexData.POSITION_OFFSET, Context3DVertexBufferFormat.FLOAT_2);
             context.setVertexBufferAt(1, mVertexBuffer, VertexData.TEXCOORD_OFFSET, Context3DVertexBufferFormat.FLOAT_2);
             
             // draw all passes
             for (var i:int=0; i<mNumPasses; ++i)
             {
-                if (i < mNumPasses - 1) // intermediate pass - draw into texture  
+                if (i < mNumPasses - 1) // intermediate pass -- draw into texture  
                 {
                     support.renderTarget = getPassTexture(i+1);
                     support.clear();
@@ -190,9 +210,7 @@ package starling.filters
                 {
                     support.renderTarget = previousRenderTarget;
                     support.projectionMatrix.copyFrom(mProjMatrix); // restore projection matrix
-                    support.translateMatrix(mBounds.x + mOffsetX, mBounds.y + mOffsetY);
-                    support.scaleMatrix(1.0/mResolution, 1.0/mResolution);
-                    support.applyBlendMode(false);
+                    support.translateMatrix(mOffsetX, mOffsetY);
                 }
                 
                 var passTexture:Texture = getPassTexture(i);
@@ -211,18 +229,14 @@ package starling.filters
             context.setTextureAt(0, null);
             
             support.popMatrix();
-            
-            if (mode == FragmentFilterMode.BELOW)
-                object.render(support, parentAlpha);
         }
         
-        // helper methods
-        
-        private function updateBuffers(context:Context3D, width:Number, height:Number):void
+        private function updateBuffers(context:Context3D, bounds:Rectangle):void
         {
-            mVertexData.setPosition(1, width, 0);
-            mVertexData.setPosition(2, 0, height);
-            mVertexData.setPosition(3, width, height);
+            mVertexData.setPosition(0, bounds.x, bounds.y);
+            mVertexData.setPosition(1, bounds.right, bounds.y);
+            mVertexData.setPosition(2, bounds.x, bounds.bottom);
+            mVertexData.setPosition(3, bounds.right, bounds.bottom);
             
             if (mVertexBuffer == null)
             {
@@ -246,7 +260,9 @@ package starling.filters
             {
                 if (mPassTextures)
                 {
-                    for each (var texture:Texture in mPassTextures) texture.dispose();
+                    for each (var texture:Texture in mPassTextures) 
+                        texture.dispose();
+                    
                     mPassTextures.length = numPassTextures;
                 }
                 else
@@ -301,7 +317,11 @@ package starling.filters
         // properties
         
         public function get resolution():Number { return mResolution; }
-        public function set resolution(value:Number):void { mResolution = value; }
+        public function set resolution(value:Number):void 
+        {
+            if (value <= 0) throw new ArgumentError("Resolution must be > 0");
+            else mResolution = value; 
+        }
         
         public function get mode():String { return mMode; }
         public function set mode(value:String):void { mMode = value; }
@@ -312,19 +332,13 @@ package starling.filters
         public function get offsetY():Number { return mOffsetY; }
         public function set offsetY(value:Number):void { mOffsetY = value; }
         
+        protected function get marginX():Number { return mMarginX; }
+        protected function set marginX(value:Number):void { mMarginX = value; }
+        
+        protected function get marginY():Number { return mMarginY; }
+        protected function set marginY(value:Number):void { mMarginY = value; }
+        
         protected function set numPasses(value:int):void { mNumPasses = value; }
         protected function get numPasses():int { return mNumPasses; }
-        
-        protected function get marginTop():Number { return mMarginTop; }
-        protected function set marginTop(value:Number):void { mMarginTop = value; }
-        
-        protected function get marginBottom():Number { return mMarginBottom; }
-        protected function set marginBottom(value:Number):void { mMarginBottom = value; }
-        
-        protected function get marginLeft():Number { return mMarginLeft; }
-        protected function set marginLeft(value:Number):void { mMarginLeft = value; }
-        
-        protected function get marginRight():Number { return mMarginRight; }
-        protected function set marginRight(value:Number):void { mMarginRight = value; }
     }
 }
