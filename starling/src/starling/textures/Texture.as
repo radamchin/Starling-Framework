@@ -59,8 +59,7 @@ package starling.textures
      *  <listing>
      *  var frame:Rectangle = new Rectangle(-10, -10, 30, 30); 
      *  var texture:Texture = Texture.fromTexture(anotherTexture, null, frame);
-     *  var image:Image = new Image(texture);
-     *  </listing>
+     *  var image:Image = new Image(texture);</listing>
      *  
      *  <p>This code would create an image with a size of 30x30, with the texture placed at 
      *  <code>x=10, y=10</code> within that image (assuming that 'anotherTexture' has a width and 
@@ -161,9 +160,11 @@ package starling.textures
                                       true);
         }
         
-        /** Creates a texture from the compressed ATF format. 
+        /** Creates a texture from the compressed ATF format. If you don't want to use any embedded
+         *  mipmaps, you can disable them by setting "useMipMaps" to <code>false</code>.
          *  Beware: you must not dispose 'data' if Starling should handle a lost device context. */ 
-        public static function fromAtfData(data:ByteArray, scale:Number=1):Texture
+        public static function fromAtfData(data:ByteArray, scale:Number=1, 
+                                           useMipMaps:Boolean=true):Texture
         {
             var context:Context3D = Starling.context;
             if (context == null) throw new MissingContextError();
@@ -175,7 +176,8 @@ package starling.textures
             uploadAtfData(nativeTexture, data);
             
             var concreteTexture:ConcreteTexture = new ConcreteTexture(nativeTexture, atfData.format, 
-                atfData.width, atfData.height, atfData.numTextures > 1, false, false, scale);
+                atfData.width, atfData.height, useMipMaps && atfData.numTextures > 1, 
+                false, false, scale);
             
             if (Starling.handleLostContext) 
                 concreteTexture.restoreOnLostContext(atfData);
@@ -314,17 +316,26 @@ package starling.textures
         public function get repeat():Boolean { return mRepeat; }
         public function set repeat(value:Boolean):void { mRepeat = value; }
         
-        /** The width of the texture in pixels. */
+        /** The width of the texture in points. */
         public function get width():Number { return 0; }
         
-        /** The height of the texture in pixels. */
+        /** The height of the texture in points. */
         public function get height():Number { return 0; }
 
+        /** The width of the texture in pixels (without scale adjustment). */
+        public function get nativeWidth():Number { return 0; }
+        
+        /** The height of the texture in pixels (without scale adjustment). */
+        public function get nativeHeight():Number { return 0; }
+        
         /** The scale factor, which influences width and height properties. */
         public function get scale():Number { return 1.0; }
         
         /** The Stage3D texture object the texture is based on. */
         public function get base():TextureBase { return null; }
+        
+        /** The concrete (power-of-two) texture the texture is based on. */
+        public function get root():ConcreteTexture { return null; }
         
         /** The <code>Context3DTextureFormat</code> of the underlying texture data. */
         public function get format():String { return Context3DTextureFormat.BGRA; }
