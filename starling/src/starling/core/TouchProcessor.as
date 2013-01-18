@@ -194,10 +194,10 @@ package starling.core
                     // ... or start new one
                     else if (mCtrlDown && mouseTouch)
                     {
-                        if (mouseTouch.phase == TouchPhase.BEGAN || mouseTouch.phase == TouchPhase.MOVED)
-                            mQueue.unshift([1, TouchPhase.BEGAN, mTouchMarker.mockX, mTouchMarker.mockY]);
-                        else
+                        if (mouseTouch.phase == TouchPhase.HOVER || mouseTouch.phase == TouchPhase.ENDED)
                             mQueue.unshift([1, TouchPhase.HOVER, mTouchMarker.mockX, mTouchMarker.mockY]);
+                        else
+                            mQueue.unshift([1, TouchPhase.BEGAN, mTouchMarker.mockX, mTouchMarker.mockY]);
                     }
                 }
             }
@@ -292,7 +292,6 @@ package starling.core
         private function onInterruption(event:Object):void
         {
             var touch:Touch;
-            var phase:String;
             
             // abort touches
             for each (touch in mCurrentTouches)

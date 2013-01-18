@@ -35,14 +35,14 @@ package starling.display
      */
     public class Quad extends DisplayObject
     {
-        private var mTinted:Boolean;
+        protected var mTinted:Boolean;
         
         /** The raw vertex data of the quad. */
         protected var mVertexData:VertexData;
         
         /** Helper objects. */
-        private static var sHelperPoint:Point = new Point();
-        private static var sHelperMatrix:Matrix = new Matrix();
+        protected static var sHelperPoint:Point = new Point();
+        protected static var sHelperMatrix:Matrix = new Matrix();
         
         /** Creates a quad with a certain size and color. The last parameter controls if the 
          *  alpha value should be premultiplied into the color values on rendering, which can
