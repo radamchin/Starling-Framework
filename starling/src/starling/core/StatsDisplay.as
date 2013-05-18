@@ -45,11 +45,23 @@ package starling.core
             addChild(mBackground);
             addChild(mTextField);
             
-            addEventListener(Event.ENTER_FRAME, onEnterFrame);
+			// adamh added
+			addEventListener(Event.ADDED_TO_STAGE, addedToStage);
+			addEventListener(Event.REMOVED_FROM_STAGE, removedFromStage);
+			
+           // addEventListener(Event.ENTER_FRAME, onEnterFrame);
             updateText(0, getMemory(), 0);
             blendMode = BlendMode.NONE;
         }
         
+		private function addedToStage(e:Event):void {		
+		 	addEventListener(Event.ENTER_FRAME, onEnterFrame);
+		}
+		
+		private function removedFromStage(e:Event):void {
+			removeEventListener(Event.ENTER_FRAME, onEnterFrame);
+		}
+
         private function updateText(fps:Number, memory:Number, drawCount:int):void
         {
 	
